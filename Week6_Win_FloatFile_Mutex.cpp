@@ -6,6 +6,9 @@ float sharedVar1 = 0.0;
 float sharedVar2 = 0.0;
 int running = 1;  // 控制线程运行的标志
 
+CRITICAL_SECTION cs;  // 定义一个临界区对象
+
+
 // 线程函数声明
 DWORD WINAPI threadFunctionA(LPVOID arg);
 DWORD WINAPI threadFunctionB(LPVOID arg);
@@ -61,14 +64,16 @@ int main(void) {
 // 线程A：等待用户输入两个浮点值
 DWORD WINAPI threadFunctionA(LPVOID arg) {
     while (running) {
+        EnterCriticalSection(&cs);  // 进入临界区
         printf("请输入两个浮点值：\n");
         scanf_s("%f %f", &sharedVar1, &sharedVar2);  // 简化输入处理
 
         if (sharedVar1 > 100.0) {
             running = 0;  // 设置终止标志
         }
+        LeaveCriticalSection(&cs);  // 离开临界区
 
-        Sleep(100);  // 避免频繁锁住CPU资源
+        Sleep(100);  // 避免频繁锁住临界区
     }
     return 0;
 }
