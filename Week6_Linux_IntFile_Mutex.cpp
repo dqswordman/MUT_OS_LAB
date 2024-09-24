@@ -14,9 +14,9 @@ pthread_cond_t cond;   // 定义条件变量，用来协调线程
 int running = 1;  // 控制线程运行的标志
 
 // 线程函数声明
-void *threadFunctionA(void *arg);
-void *threadFunctionB(void *arg);
-void *threadFunctionC(void *arg);
+void* threadFunctionA(void* arg);
+void* threadFunctionB(void* arg);
+void* threadFunctionC(void* arg);
 
 int main() {
     pthread_t tidA, tidB, tidC;
@@ -43,7 +43,7 @@ int main() {
 }
 
 // 线程A：负责用户输入
-void *threadFunctionA(void *arg) {
+void* threadFunctionA(void* arg) {
     int userInput = 0;
     while (running) {
         pthread_mutex_lock(&lock);  // 锁住互斥锁
@@ -68,7 +68,7 @@ void *threadFunctionA(void *arg) {
 }
 
 // 线程B：负责计算
-void *threadFunctionB(void *arg) {
+void* threadFunctionB(void* arg) {
     while (running) {
         pthread_mutex_lock(&lock);  // 锁住互斥锁
         while (!flagB) {  // 等待线程B的执行时机
@@ -89,7 +89,7 @@ void *threadFunctionB(void *arg) {
 }
 
 // 线程C：负责其他操作
-void *threadFunctionC(void *arg) {
+void* threadFunctionC(void* arg) {
     while (running) {
         pthread_mutex_lock(&lock);  // 锁住互斥锁
         while (!flagC) {  // 等待线程C的执行时机

@@ -3,72 +3,65 @@
 #include <pthread.h>
 #include <unistd.h>
 
-#define TERMINATE_VALUE -1  // 定义终止值
+// 共享变量
+int sharedVar1 = 0;
+int sharedVar2 = 0;
+int running = 1;  // 控制线程运行的标志
 
-// 共享数据结构
-struct shared_data {
-    int val1;
-    int val2;
-};
+// 线程函数声明
+void* threadFunctionA(void* arg);
+void* threadFunctionB(void* arg);
+void* threadFunctionC(void* arg);
 
-// 共享数据实例
-struct shared_data shm;
+int main(void) {
+    pthread_t tid1, tid2, tid3;  // 线程ID
 
-// 标志变量，用于控制线程运行状态
-int terminate = 0;
+    // 创建3个线程
+    pthread_create(&tid1, NULL, threadFunctionA, NULL);
+    pthread_create(&tid2, NULL, threadFunctionB, NULL);
+    pthread_create(&tid3, NULL, threadFunctionC, NULL);
 
-// 线程A函数：获取用户输入
-void *threadFunctionA(void *arg) {
+    // 等待所有线程完成
+    pthread_join(tid1, NULL);
+    pthread_join(tid2, NULL);
+    pthread_join(tid3, NULL);
+
+    return 0;
+}
+
+// 线程A：等待用户输入两个整数值
+void* threadFunctionA(void* arg) {
     while (1) {
-        printf("Enter two integers (first < 0 to quit): ");
-        if (scanf("%d %d", &shm.val1, &shm.val2) != 2) {
-            printf("Invalid input. Please enter two integer numbers.\n");
-            while (getchar() != '\n'); // 清空输入缓冲区
-            continue;
-        }
-        if (shm.val1 < 0) {
-            terminate = 1; // 设置退出标志
+        printf("请输入两个整数值 (第一个输入小于0退出)：\n");
+        scanf("%d %d", &sharedVar1, &sharedVar2);
+        if (sharedVar1 < 0) {
+            running = 0;  // 设置终止标志
             break;
         }
     }
     pthread_exit(0);
 }
 
-// 线程B函数：计算和
-void *threadFunctionB(void *arg) {
-    while (!terminate) {
-        sleep(2); // 等待2秒
-        if (shm.val1 < 0) break; // 检查终止条件
-        printf("B: Sum is %d\n", shm.val1 + shm.val2);
+// 线程B：计算并显示两个共享变量的和
+void* threadFunctionB(void* arg) {
+    while (running) {
+        printf("和：%d\n", sharedVar1 + sharedVar2);
+        sleep(2);  // 等待2秒
+        if (sharedVar1 < 0) {
+            break;
+        }
     }
     pthread_exit(0);
 }
 
-// 线程C函数：计算积
-void *threadFunctionC(void *arg) {
-    while (!terminate) {
-        sleep(3); // 等待3秒
-        if (shm.val1 < 0) break; // 检查终止条件
-        printf("C: Product is %d\n", shm.val1 * shm.val2);
+// 线程C：计算并显示两个共享变量的积
+void* threadFunctionC(void* arg) {
+    while (running) {
+        printf("积：%d\n", sharedVar1 * sharedVar2);
+        sleep(3);  // 等待3秒
+        if (sharedVar1 < 0) {
+            break;
+        }
     }
     pthread_exit(0);
-}
-
-int main() {
-    pthread_t tidA, tidB, tidC;
-
-    shm.val1 = 0;
-    shm.val2 = 0;
-
-    // 创建线程A、B和C
-    pthread_create(&tidA, NULL, threadFunctionA, NULL);
-    pthread_create(&tidB, NULL, threadFunctionB, NULL);
-    pthread_create(&tidC, NULL, threadFunctionC, NULL);
-
-    // 等待线程A、B和C结束
-    pthread_join(tidA, NULL);
-    pthread_join(tidB, NULL);
-    pthread_join(tidC, NULL);
-
-    return 0;
 }

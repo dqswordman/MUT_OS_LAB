@@ -1,97 +1,105 @@
-#include <stdio.h>
+#include <iostream>
 #include <windows.h>
 
-// 共享变量
-float sharedVar1 = 0.0;
-float sharedVar2 = 0.0;
-int running = 1;  // 控制线程运行的标志
-
-CRITICAL_SECTION cs;  // 定义一个临界区对象
-
+float sharedVar1 = 0.0f;
+float sharedVar2 = 0.0f;
+bool running = true;  // 控制线程运行的标志
+CRITICAL_SECTION lock;  // Windows的临界区，用于替代pthread中的mutex
 
 // 线程函数声明
-DWORD WINAPI threadFunctionA(LPVOID arg);
-DWORD WINAPI threadFunctionB(LPVOID arg);
-DWORD WINAPI threadFunctionC(LPVOID arg);
+DWORD WINAPI threadFunctionA(LPVOID lpParam);
+DWORD WINAPI threadFunctionB(LPVOID lpParam);
+DWORD WINAPI threadFunctionC(LPVOID lpParam);
 
-int main(void) {
-    DWORD tid1, tid2, tid3;  // 线程 ID
-    HANDLE th1, th2, th3;    // 线程句柄
+int main() {
+    // 初始化临界区
+    InitializeCriticalSection(&lock);
 
-    // 创建 3 个线程
-    th1 = CreateThread(
-        NULL,                // 默认安全属性
-        0,                   // 默认栈大小
-        threadFunctionA,     // 线程函数
-        NULL,                // 线程函数参数
-        0,                   // 默认创建标志
-        &tid1                // 返回的线程 ID
-    );
+    // 创建线程句柄
+    HANDLE hThread1 = CreateThread(NULL, 0, threadFunctionA, NULL, 0, NULL);
+    HANDLE hThread2 = CreateThread(NULL, 0, threadFunctionB, NULL, 0, NULL);
+    HANDLE hThread3 = CreateThread(NULL, 0, threadFunctionC, NULL, 0, NULL);
 
-    th2 = CreateThread(
-        NULL,
-        0,
-        threadFunctionB,
-        NULL,
-        0,
-        &tid2
-    );
-
-    th3 = CreateThread(
-        NULL,
-        0,
-        threadFunctionC,
-        NULL,
-        0,
-        &tid3
-    );
+    if (hThread1 == NULL || hThread2 == NULL || hThread3 == NULL) {
+        std::cerr << "线程创建失败\n";
+        return 1;
+    }
 
     // 等待所有线程完成
-    if (th1 != NULL && th2 != NULL && th3 != NULL) {
-        WaitForSingleObject(th1, INFINITE);
-        WaitForSingleObject(th2, INFINITE);
-        WaitForSingleObject(th3, INFINITE);
+    WaitForSingleObject(hThread1, INFINITE);
+    WaitForSingleObject(hThread2, INFINITE);
+    WaitForSingleObject(hThread3, INFINITE);
 
-        // 关闭线程句柄
-        CloseHandle(th1);
-        CloseHandle(th2);
-        CloseHandle(th3);
-    }
+    // 关闭线程句柄
+    CloseHandle(hThread1);
+    CloseHandle(hThread2);
+    CloseHandle(hThread3);
+
+    // 删除临界区
+    DeleteCriticalSection(&lock);
 
     return 0;
 }
 
-// 线程A：等待用户输入两个浮点值
-DWORD WINAPI threadFunctionA(LPVOID arg) {
-    while (running) {
-        EnterCriticalSection(&cs);  // 进入临界区
-        printf("请输入两个浮点值：\n");
-        scanf_s("%f %f", &sharedVar1, &sharedVar2);  // 简化输入处理
+// 线程A：等待用户输入两个浮点数
+DWORD WINAPI threadFunctionA(LPVOID lpParam) {
+    while (true) {
+        float localVar1, localVar2;
+        std::cout << "请输入两个浮点值：\n";
+        std::cin >> localVar1 >> localVar2;
 
-        if (sharedVar1 > 100.0) {
-            running = 0;  // 设置终止标志
+        EnterCriticalSection(&lock);
+        sharedVar1 = localVar1;
+        sharedVar2 = localVar2;
+        LeaveCriticalSection(&lock);
+
+        if (localVar1 > 100.0f) {  // 当输入的第一个变量大于100时，停止所有线程
+            running = false;  // 设置终止标志
+            break;
         }
-        LeaveCriticalSection(&cs);  // 离开临界区
-
-        Sleep(100);  // 避免频繁锁住临界区
     }
     return 0;
 }
 
-// 线程B：计算并显示两个共享变量的差
-DWORD WINAPI threadFunctionB(LPVOID arg) {
+// 线程B：计算并显示两个共享变量的和
+DWORD WINAPI threadFunctionB(LPVOID lpParam) {
     while (running) {
-        printf("差值：%f\n", sharedVar2 - sharedVar1);
-        Sleep(2000);  // 每2秒输出一次差值
+        float localVar1, localVar2, sum;
+
+        EnterCriticalSection(&lock);
+        localVar1 = sharedVar1;
+        localVar2 = sharedVar2;
+        LeaveCriticalSection(&lock);
+
+        std::cout << "浮点数是" << localVar1 << " , " << localVar2 << std::endl;
+
+        Sleep(2000);  // 等待2秒
+
+        if (!running) {
+            break;
+        }
     }
     return 0;
 }
 
-// 线程C：显示两个共享变量的值
-DWORD WINAPI threadFunctionC(LPVOID arg) {
+// 线程C：计算并显示两个共享变量的积
+DWORD WINAPI threadFunctionC(LPVOID lpParam) {
     while (running) {
-        printf("当前值：Var1 = %f, Var2 = %f\n", sharedVar1, sharedVar2);
-        Sleep(3000);  // 每3秒显示一次当前值
+        float localVar1, localVar2, product;
+
+        EnterCriticalSection(&lock);
+        localVar1 = sharedVar1;
+        localVar2 = sharedVar2;
+        LeaveCriticalSection(&lock);
+
+        //product = localVar1 * localVar2;
+        std::cout << "差值 :" << localVar2 - localVar1 << std::endl;
+
+        Sleep(3000);  // 等待3秒
+
+        if (!running) {
+            break;
+        }
     }
     return 0;
 }
