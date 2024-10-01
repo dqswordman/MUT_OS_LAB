@@ -12,7 +12,7 @@ For the two groups of code of MUT_OS_LAB, the full implementation
 
 1/10/24 
 
-  经典的哲学家问题 如何把正常的代码干到死锁和三种不同的解决方案
+  经典的哲学家问题 如何把正常的代码干到死锁和三种不同的解决方案 半个小时后记：修复了方案一使用maxseats限制而不是真的少创建一个哲学家达到空一个座位的问题
   1.允许一个空座位 
     
     Allow one empty seat 
