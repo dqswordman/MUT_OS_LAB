@@ -18,8 +18,9 @@ std::mutex p_mtx, e_mtx;  // 用于分别保护P核和E核的任务队列
 void P_core_task(int task_id, int repeat) {
     for (int i = 0; i < repeat; ++i) {
         std::this_thread::sleep_for(std::chrono::seconds(2));  // 模拟高负载任务
-        std::cout << "Task " << task_id << " iteration " << (i + 1) << " on P-core in thread "
-            << std::this_thread::get_id() << " completed." << std::endl;
+        std::cout << "Task " << task_id << " iteration " << (i + 1)
+            << " on P-core in thread " << std::this_thread::get_id() << " completed."
+            << std::endl;
     }
     std::cout << "Task " << task_id << " finished on P-core in thread "
         << std::this_thread::get_id() << "." << std::endl;
@@ -29,8 +30,9 @@ void P_core_task(int task_id, int repeat) {
 void E_core_task(int task_id, int repeat) {
     for (int i = 0; i < repeat; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(800));  // 模拟低负载任务
-        std::cout << "Task " << task_id << " iteration " << (i + 1) << " on E-core in thread "
-            << std::this_thread::get_id() << " completed." << std::endl;
+        std::cout << "Task " << task_id << " iteration " << (i + 1)
+            << " on E-core in thread " << std::this_thread::get_id() << " completed."
+            << std::endl;
     }
     std::cout << "Task " << task_id << " finished on E-core in thread "
         << std::this_thread::get_id() << "." << std::endl;
@@ -76,10 +78,14 @@ void thread_director(int task_id, int workload) {
     if (workload > 5) {
         std::lock_guard<std::mutex> lock(p_mtx);
         P_core_queue.push({ task_id, repeat });  // 将任务加入P核队列
+        std::cout << "Thread Director: Task " << task_id << " with workload " << workload
+            << " assigned to P-core." << std::endl;
     }
     else {
         std::lock_guard<std::mutex> lock(e_mtx);
         E_core_queue.push({ task_id, repeat });  // 将任务加入E核队列
+        std::cout << "Thread Director: Task " << task_id << " with workload " << workload
+            << " assigned to E-core." << std::endl;
     }
 }
 
@@ -113,7 +119,8 @@ int main() {
         int task_id = task.first;
         int workload = task.second; // 工作负载，决定分配给P核还是E核
 
-        std::cout << "Assigning Task " << task_id << " with workload " << workload << "." << std::endl;
+        std::cout << "Assigning Task " << task_id << " with workload " << workload << "."
+            << std::endl;
         thread_director(task_id, workload);
     }
 
@@ -126,8 +133,8 @@ int main() {
     }
     for (auto& t : e_core_threads) {
         t.detach();
-
-        std::cout << "All tasks completed." << std::endl;
-        return 0;
     }
+
+    std::cout << "All tasks completed." << std::endl;
+    return 0;
 }
