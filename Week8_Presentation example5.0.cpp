@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <string>
 #include <unordered_map>
+#include <sstream>
 
 // 任务结构体，表示应用程序的子任务
 struct Task {
@@ -27,61 +28,73 @@ struct Application {
 std::queue<Task> p_core_tasks;  // P核任务队列
 std::queue<Task> e_core_tasks;  // E核任务队列
 
-std::mutex p_mutex, e_mutex;
+std::mutex p_mutex, e_mutex, print_mutex;
 std::condition_variable cv;
 bool stop_simulation = false;
 
+// 线程安全的打印函数
+void safe_print(const std::string& message) {
+    std::lock_guard<std::mutex> lock(print_mutex);
+    std::cout << message << std::endl;
+}
+
+// 获取线程ID的数值部分
+std::string get_thread_id() {
+    std::ostringstream oss;
+    oss << std::this_thread::get_id();
+    return oss.str();
+}
+
 // 模拟 P 核（性能核心）的任务
 void P_core_task(const Task& task) {
-    std::cout << "[P-core] Task " << task.task_id << " (" << task.task_type
-        << ") running with priority " << task.priority
-        << " and load " << task.load
-        << " in thread " << std::this_thread::get_id() << std::endl;
+    safe_print("[P-core] Task " + std::to_string(task.task_id) + " (" + task.task_type +
+        ") running with priority " + std::to_string(task.priority) +
+        " and load " + std::to_string(task.load) +
+        " in thread " + get_thread_id());
     std::this_thread::sleep_for(std::chrono::milliseconds(1500 * task.load));  // 模拟任务的执行时间
-    std::cout << "[P-core] Task " << task.task_id << " completed." << std::endl;
+    safe_print("[P-core] Task " + std::to_string(task.task_id) + " completed.");
 }
 
 // 模拟 E 核（能效核心）的任务
 void E_core_task(const Task& task) {
-    std::cout << "[E-core] Task " << task.task_id << " (" << task.task_type
-        << ") running with priority " << task.priority
-        << " and load " << task.load
-        << " in thread " << std::this_thread::get_id() << std::endl;
+    safe_print("[E-core] Task " + std::to_string(task.task_id) + " (" + task.task_type +
+        ") running with priority " + std::to_string(task.priority) +
+        " and load " + std::to_string(task.load) +
+        " in thread " + get_thread_id());
     std::this_thread::sleep_for(std::chrono::milliseconds(800 * task.load));  // 模拟任务的执行时间
-    std::cout << "[E-core] Task " << task.task_id << " completed." << std::endl;
+    safe_print("[E-core] Task " + std::to_string(task.task_id) + " completed.");
 }
 
 // 线程指导器：根据任务的负载和优先级动态调度到合适的核心
 void thread_director(const Task& task) {
-    // 输出调度信息
-    std::cout << "Thread Director: Analyzing task " << task.task_id << " (" << task.task_type
-        << ") with load " << task.load << " and priority " << task.priority << std::endl;
+    safe_print("Thread Director: Analyzing task " + std::to_string(task.task_id) + " (" + task.task_type +
+        ") with load " + std::to_string(task.load) + " and priority " + std::to_string(task.priority));
     std::this_thread::sleep_for(std::chrono::milliseconds(500));  // 模拟调度决策延迟
 
     // 根据任务负载和优先级选择合适的核心
     if (task.load > 5 || task.priority >= 7) { // 高负载或高优先级任务分配给P核
         std::lock_guard<std::mutex> lock(p_mutex);
         p_core_tasks.push(task);
-        std::cout << "Thread Director: Task " << task.task_id << " assigned to P-core." << std::endl;
+        safe_print("Thread Director: Task " + std::to_string(task.task_id) + " assigned to P-core.");
         cv.notify_one();  // 通知P核处理
     }
     else { // 低负载或低优先级任务分配给E核
         std::lock_guard<std::mutex> lock(e_mutex);
         e_core_tasks.push(task);
-        std::cout << "Thread Director: Task " << task.task_id << " assigned to E-core." << std::endl;
+        safe_print("Thread Director: Task " + std::to_string(task.task_id) + " assigned to E-core.");
         cv.notify_one();  // 通知E核处理
     }
 }
 
 // APO 调度器：先根据任务的性质和优先级初步优化任务分配，再交给线程指导器
 void APO_scheduler(const Task& task) {
-    std::cout << "APO Scheduler: Pre-evaluating task " << task.task_id << " (" << task.task_type
-        << ") with priority " << task.priority << std::endl;
+    safe_print("APO Scheduler: Pre-evaluating task " + std::to_string(task.task_id) + " (" + task.task_type +
+        ") with priority " + std::to_string(task.priority));
     std::this_thread::sleep_for(std::chrono::milliseconds(500));  // 模拟APO优化时间
 
     // 在交给线程指导器之前，APO会先根据应用场景进行任务优化
     if (task.task_type == "Graphics") {
-        std::cout << "APO Scheduler: Task " << task.task_id << " detected as a Graphics task, boosting priority." << std::endl;
+        safe_print("APO Scheduler: Task " + std::to_string(task.task_id) + " detected as a Graphics task, boosting priority.");
         Task modified_task = task;
         modified_task.priority = std::max(10, task.priority + 2); // 提升优先级
         thread_director(modified_task);  // 交给线程指导器
@@ -125,13 +138,20 @@ void E_core_thread_pool() {
     }
 }
 
+// 检查所有任务是否完成
+bool all_tasks_completed() {
+    std::lock_guard<std::mutex> lock_p(p_mutex);
+    std::lock_guard<std::mutex> lock_e(e_mutex);
+    return p_core_tasks.empty() && e_core_tasks.empty();
+}
+
 // 模拟应用程序的任务提交
 void submit_application_tasks(Application& app) {
-    std::cout << "\nApplication " << app.name << " is submitting tasks:" << std::endl;
+    safe_print("\nApplication " + app.name + " is submitting tasks:");
     for (const auto& task : app.tasks) {
-        std::cout << "Submitting task " << task.task_id << " (" << task.task_type
-            << ") with priority " << task.priority
-            << " and load " << task.load << std::endl;
+        safe_print("Submitting task " + std::to_string(task.task_id) + " (" + task.task_type +
+            ") with priority " + std::to_string(task.priority) +
+            " and load " + std::to_string(task.load));
         APO_scheduler(task);  // 通过APO调度器分配任务
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));  // 模拟任务提交的间隔
     }
@@ -157,6 +177,11 @@ int main() {
     app1_thread.join();
     app2_thread.join();
 
+    // 检查所有任务是否完成
+    while (!all_tasks_completed()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));  // 等待所有任务完成
+    }
+
     // 停止模拟
     {
         std::lock_guard<std::mutex> lock(p_mutex);
@@ -166,6 +191,6 @@ int main() {
     p_core_thread.join();
     e_core_thread.join();
 
-    std::cout << "All tasks completed. Simulation ended." << std::endl;
+    safe_print("All tasks completed. Simulation ended.");
     return 0;
 }
