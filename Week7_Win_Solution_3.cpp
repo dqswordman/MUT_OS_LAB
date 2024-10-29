@@ -50,22 +50,26 @@ int main(void) {
     }
 
     // Create n threads
-    for (i = 0; i < CHAIRNUM; i++)
+    for (i = 0; i < CHAIRNUM; i++) {
         th[i] = CreateThread(
             NULL,                // Default security attributes
             0,                   // Default stack size
             philosopher,         // Thread function
-            (void*)&param[i],   // Thread function parameter
+            (void*)&param[i],    // Thread function parameter
             0,                   // Default creation flag
             &tid[i]);            // Thread ID returned.
+    }
 
     // Wait until all threads finish
-    for (i = 0; i < CHAIRNUM; i++)
-        if (th[i] != NULL)
+    for (i = 0; i < CHAIRNUM; i++) {
+        if (th[i] != NULL) {
             WaitForSingleObject(th[i], INFINITE);
+        }
+    }
 
-    for (i = 0; i < CHAIRNUM; i++)
+    for (i = 0; i < CHAIRNUM; i++) {
         CloseHandle(chopstick[i]);
+    }
 
     return 0;
 }
@@ -84,39 +88,42 @@ DWORD sem_signal(HANDLE sem) {
 }
 
 DWORD WINAPI philosopher(LPVOID who) {
-    int no, i = 0;
+    int no = *((int*)who);
 
-    no = (int)*((int*)who);
-
-    for (i = 0; i < 10; i++) {
+    for (int i = 0; i < 10; i++) {
         gotoxy(1, no * 4 + 1);
-        printf("Mr. %c is thinking...                           \n", 'A' + no); fflush(stdout);
+        printf("Mr. %c is thinking...                           \n", 'A' + no);
+        fflush(stdout);
         randomDelay();
 
-        // 同时获取两只筷子，确保原子操作
-        if (no % 2 == 0) {  // 偶数编号哲学家
-            sem_wait(chopstick[(no + 1) % CHAIRNUM]);  // 拿右边的筷子
-            sem_wait(chopstick[no]);  // 拿左边的筷子
+        // 尝试拿筷子直到成功
+        while (1) {
+            // 尝试拿左边的筷子
+            if (sem_wait(chopstick[no]) == WAIT_OBJECT_0) {
+                // 尝试拿右边的筷子
+                if (sem_wait(chopstick[(no + 1) % CHAIRNUM]) == WAIT_OBJECT_0) {
+                    gotoxy(1, no * 4 + 1);
+                    printf("Mr. %c is eating...                             \n", 'A' + no);
+                    fflush(stdout);
+                    randomDelay();  // 吃饭时间
+
+                    // 放下两根筷子
+                    sem_signal(chopstick[no]);
+                    sem_signal(chopstick[(no + 1) % CHAIRNUM]);
+
+                    gotoxy(1, no * 4 + 1);
+                    printf("Mr. %c finished eating       \n", 'A' + no);
+                    fflush(stdout);
+
+                    break;  // 成功吃饭后退出循环
+                }
+                else {
+                    // 如果拿不到右边的筷子，放下左边的筷子
+                    sem_signal(chopstick[no]);
+                }
+            }
+            randomDelay();  // 等待一段时间再尝试
         }
-        else {  // 奇数编号哲学家
-            sem_wait(chopstick[no]);  // 拿左边的筷子
-            sem_wait(chopstick[(no + 1) % CHAIRNUM]);  // 拿右边的筷子
-        }
-
-        gotoxy(1, no * 4 + 1);
-        printf("Mr. %c has taken both chopsticks and is eating...    \n", 'A' + no); fflush(stdout);
-
-        // Critical Section
-        randomDelay();  // 吃饭时间
-        timeUsed[no]++;
-
-        // 释放两只筷子
-        sem_signal(chopstick[no]);
-        sem_signal(chopstick[(no + 1) % CHAIRNUM]);
-
-        gotoxy(1, no * 4 + 1);
-        printf("Mr. %c finished eating and is thinking...            \n", 'A' + no); fflush(stdout);
-        randomDelay();  // 哲学家思考时间
     }
     return 0;
 }
