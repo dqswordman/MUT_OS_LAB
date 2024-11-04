@@ -16,57 +16,49 @@
 我们通过确保哲学家只能在同时获取两只筷子时才进入“吃饭”状态，从而防止哲学家卡在等待单个筷子的状态下，这样避免了死锁。
 */
 #include <stdio.h>
+#include <stdlib.h>
 #include <windows.h>
 #include <time.h>
-#include <stdlib.h>
-#include "C:\Users\Administrator\Desktop\lab\lab\winconio.h"
+#include "C:\Users\Du\Downloads\lab\lab\conio.h"  // 根据实际路径调整
 
 #define CHAIRNUM 5
 
-HANDLE chopstick[CHAIRNUM];
+HANDLE chopstick[CHAIRNUM];  // 筷子的信号量
 int timeUsed[CHAIRNUM];
 
 void randomDelay(void);
+void shortDelay(void);
 DWORD WINAPI philosopher(LPVOID who);
-DWORD sem_wait(HANDLE sem);
-DWORD sem_signal(HANDLE sem);
 
-int main(void) {
+int main() {
+    HANDLE th[CHAIRNUM];      // 哲学家线程句柄
+    DWORD tid[CHAIRNUM];      // 线程ID
+    int param[CHAIRNUM];      // 参数数组
     int i;
-    DWORD tid[CHAIRNUM];                // Thread ID
-    HANDLE th[CHAIRNUM];                // Thread Handle
-    int param[CHAIRNUM];
 
-    clrscr();
+    clrscr();  // 清屏
+    srand((unsigned)time(NULL));  // 初始化随机数种子
 
+    // 初始化信号量
     for (i = 0; i < CHAIRNUM; i++) {
-        chopstick[i] = CreateSemaphore(
-            NULL,   // default security attributes
-            1,      // initial count
-            1,      // maximum count
-            NULL);  // unnamed semaphore
+        chopstick[i] = CreateSemaphore(NULL, 1, 1, NULL);  // 初始信号量值为1
         param[i] = i;
         timeUsed[i] = 0;
     }
 
-    // Create n threads
+    // 创建哲学家线程
     for (i = 0; i < CHAIRNUM; i++) {
-        th[i] = CreateThread(
-            NULL,                // Default security attributes
-            0,                   // Default stack size
-            philosopher,         // Thread function
-            (void*)&param[i],    // Thread function parameter
-            0,                   // Default creation flag
-            &tid[i]);            // Thread ID returned.
+        th[i] = CreateThread(NULL, 0, philosopher, &param[i], 0, &tid[i]);
+        Sleep(100);  // 避免同时启动所有线程，等待100毫秒
     }
 
-    // Wait until all threads finish
+    // 等待所有线程完成
     for (i = 0; i < CHAIRNUM; i++) {
-        if (th[i] != NULL) {
-            WaitForSingleObject(th[i], INFINITE);
-        }
+        WaitForSingleObject(th[i], INFINITE);
+        CloseHandle(th[i]);
     }
 
+    // 销毁信号量
     for (i = 0; i < CHAIRNUM; i++) {
         CloseHandle(chopstick[i]);
     }
@@ -74,56 +66,59 @@ int main(void) {
     return 0;
 }
 
+// 哲学家线程函数
+DWORD WINAPI philosopher(LPVOID who) {
+    int no = *((int*)who);
+    int i = 0;
+
+    for (i = 0; i < 10; i++) {
+        gotoxy(1, no * 4 + 1);
+        printf("Mr. %c is thinking...\n", 'A' + no);
+        fflush(stdout);
+        randomDelay();  // 模拟思考时间
+
+        // 尝试拿起第一根筷子
+        if (WaitForSingleObject(chopstick[no], INFINITE) == WAIT_OBJECT_0) {
+            // 尝试拿起第二根筷子
+            if (WaitForSingleObject(chopstick[(no + 1) % CHAIRNUM], INFINITE) == WAIT_OBJECT_0) {
+                // 成功拿起两根筷子，开始吃饭
+                gotoxy(1, no * 4 + 1);
+                printf("Mr. %c has taken both chopsticks and is eating...\n", 'A' + no);
+                fflush(stdout);
+                randomDelay();  // 模拟吃饭时间
+
+                // 吃完后放下筷子
+                ReleaseSemaphore(chopstick[no], 1, NULL);
+                ReleaseSemaphore(chopstick[(no + 1) % CHAIRNUM], 1, NULL);
+
+                gotoxy(1, no * 4 + 1);
+                printf("Mr. %c drops both chopsticks...\n", 'A' + no);
+                fflush(stdout);
+            }
+            else {
+                // 如果无法拿起第二根筷子，放下第一根筷子并短暂延迟
+                ReleaseSemaphore(chopstick[no], 1, NULL);
+                shortDelay();  // 短暂延迟后再试
+            }
+        }
+
+        randomDelay();  // 模拟吃完后继续思考
+    }
+
+    gotoxy(1, no * 4 + 1);
+    printf("Mr. %c is full...\n", 'A' + no);
+    fflush(stdout);
+
+    return 0;
+}
+
+// 随机延迟函数，模拟思考或吃饭时间
 void randomDelay(void) {
-    int stime = ((rand() % 2000) + 100);
+    int stime = (rand() % 500) + 10;  // 随机延迟10-510毫秒
     Sleep(stime);
 }
 
-DWORD sem_wait(HANDLE sem) {
-    return WaitForSingleObject(sem, INFINITE);
-}
-
-DWORD sem_signal(HANDLE sem) {
-    return ReleaseSemaphore(sem, 1, NULL);
-}
-
-DWORD WINAPI philosopher(LPVOID who) {
-    int no = *((int*)who);
-
-    for (int i = 0; i < 10; i++) {
-        gotoxy(1, no * 4 + 1);
-        printf("Mr. %c is thinking...                           \n", 'A' + no);
-        fflush(stdout);
-        randomDelay();
-
-        // 尝试拿筷子直到成功
-        while (1) {
-            // 尝试拿左边的筷子
-            if (sem_wait(chopstick[no]) == WAIT_OBJECT_0) {
-                // 尝试拿右边的筷子
-                if (sem_wait(chopstick[(no + 1) % CHAIRNUM]) == WAIT_OBJECT_0) {
-                    gotoxy(1, no * 4 + 1);
-                    printf("Mr. %c is eating...                             \n", 'A' + no);
-                    fflush(stdout);
-                    randomDelay();  // 吃饭时间
-
-                    // 放下两根筷子
-                    sem_signal(chopstick[no]);
-                    sem_signal(chopstick[(no + 1) % CHAIRNUM]);
-
-                    gotoxy(1, no * 4 + 1);
-                    printf("Mr. %c finished eating       \n", 'A' + no);
-                    fflush(stdout);
-
-                    break;  // 成功吃饭后退出循环
-                }
-                else {
-                    // 如果拿不到右边的筷子，放下左边的筷子
-                    sem_signal(chopstick[no]);
-                }
-            }
-            randomDelay();  // 等待一段时间再尝试
-        }
-    }
-    return 0;
+// 短暂延迟函数，避免频繁争抢
+void shortDelay(void) {
+    Sleep(10);  // 短暂延迟10毫秒
 }

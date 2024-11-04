@@ -1,114 +1,106 @@
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
-
-#include <sys/types.h>
 #include <stdio.h>
-#include <unistd.h> // for usleep()
-#include <stdlib.h> // for exit() and random generator
-#include <wait.h>   // for wait()
-#include <time.h>
-#include <semaphore.h>
+#include <stdlib.h>
+#include <unistd.h>  // for usleep()
 #include <pthread.h>
-#include "/home/miic1225/Downloads/lab/conio.h"
+#include <semaphore.h>
+#include <time.h>
+#include "/home/miic1225/Downloads/lab/conio.h"  // 根据实际路径调整
 
 #define CHAIRNUM 5
 
-sem_t chopstick[CHAIRNUM];
+sem_t chopstick[CHAIRNUM];  // 筷子的信号量
 int timeUsed[CHAIRNUM];
 
 void randomDelay(void);
+void shortDelay(void);
 void *philosopher(void *who);
 
-int main(){
-    pthread_t  tid[CHAIRNUM];   // Child Process ID
-    pthread_attr_t attr[CHAIRNUM];
+int main() {
+    pthread_t tid[CHAIRNUM];
     int param[CHAIRNUM];
     int i;
 
-    clrscr();
-    // Initialize semaphores
-    for(i = 0; i < CHAIRNUM; i++){
+    clrscr();  // 清屏
+    srand((unsigned)time(NULL));  // 初始化随机数种子
+
+    // 初始化信号量
+    for (i = 0; i < CHAIRNUM; i++) {
+        sem_init(&chopstick[i], 0, 1);  // 初始化信号量，值为1
         param[i] = i;
         timeUsed[i] = 0;
-        sem_init(&chopstick[i], 0, 1); // Initialize the semaphores for the chopsticks
     }
 
-    for(i = 0; i < CHAIRNUM; i++)
-        pthread_attr_init(&attr[i]);
+    // 创建哲学家线程
+    for (i = 0; i < CHAIRNUM; i++) {
+        pthread_create(&tid[i], NULL, philosopher, &param[i]);
+        usleep(100 * 1000);  // 避免线程同时启动，等待100毫秒
+    }
 
-    for(i = 0; i < CHAIRNUM; i++)
-        pthread_create(&tid[i], &attr[i], philosopher, (void *)&param[i]);
-
-    for(i = 0; i < CHAIRNUM; i++)
+    // 等待所有线程完成
+    for (i = 0; i < CHAIRNUM; i++) {
         pthread_join(tid[i], NULL);
+    }
 
-    for(i = 0; i < CHAIRNUM; i++)
+    // 销毁信号量
+    for (i = 0; i < CHAIRNUM; i++) {
         sem_destroy(&chopstick[i]);
+    }
 
     return 0;
 }
 
-void *philosopher(void *who){
-    int no = (int)*((int *)who);
+// 哲学家线程函数
+void *philosopher(void *who) {
+    int no = *((int *)who);
     int i = 0;
 
-    for(i = 0; i < 10; i++){
+    for (i = 0; i < 10; i++) {
         gotoxy(1, no * 4 + 1);
-        printf("Mr. %c is thinking...                                    \n", 'A' + no); fflush(stdout);
-        randomDelay();
+        printf("Mr. %c is thinking...                                    \n", 'A' + no);
+        fflush(stdout);
+        randomDelay();  // 模拟思考时间
 
-        // 强制哲学家同时拿起两只筷子
-        if (no % 2 == 0) {
-            sem_wait(&chopstick[(no + 1) % CHAIRNUM]);  // 拿右边的筷子
-            sem_wait(&chopstick[no]);  // 拿左边的筷子
-        } else {
-            sem_wait(&chopstick[no]);  // 拿左边的筷子
-            sem_wait(&chopstick[(no + 1) % CHAIRNUM]);  // 拿右边的筷子
+        // 尝试拿起第一根筷子
+        if (sem_wait(&chopstick[no]) == 0) {
+            // 尝试拿起第二根筷子
+            if (sem_wait(&chopstick[(no + 1) % CHAIRNUM]) == 0) {
+                // 成功拿起两根筷子，开始吃饭
+                gotoxy(1, no * 4 + 1);
+                printf("Mr. %c has taken both chopsticks and is eating...        \n", 'A' + no);
+                fflush(stdout);
+                randomDelay();  // 模拟吃饭时间
+
+                // 吃完后放下筷子
+                sem_post(&chopstick[no]);
+                sem_post(&chopstick[(no + 1) % CHAIRNUM]);
+
+                gotoxy(1, no * 4 + 1);
+                printf("Mr. %c drops both chopsticks...                          \n", 'A' + no);
+                fflush(stdout);
+            } else {
+                // 如果无法拿起第二根筷子，放下第一根筷子并短暂延迟
+                sem_post(&chopstick[no]);
+                shortDelay();  // 短暂延迟后再试
+            }
         }
 
-        gotoxy(1, no * 4 + 1);
-        printf("Mr. %c has taken both chopsticks and is eating...        \n", 'A' + no); fflush(stdout);
-
-        // Critical Section
-        randomDelay();
-        timeUsed[no]++;
-        timeUsed[(no + 1) % CHAIRNUM]++;
-        gotoxy(no * 10 + 1, CHAIRNUM * 4 + 1);
-        printf("CH[%d]=%d ", no, timeUsed[no]);
-        gotoxy(((no + 1) % CHAIRNUM) * 10 + 1, CHAIRNUM * 4 + 1);
-        printf("CH[%d]=%d ", (no + 1) % CHAIRNUM, timeUsed[(no + 1) % CHAIRNUM]);
-        gotoxy(no * 10 + 1, CHAIRNUM * 4 + 2);
-        printf("  [%c]=%d ", 'A' + no, i);
-
-        gotoxy(1, no * 4 + 1);
-        printf("                                                                 \n");
-        gotoxy(1, no * 4 + 2);
-        printf("                                                                 \n");
-        randomDelay();
-
-        // 释放两只筷子
-        sem_post(&chopstick[no]);
-        sem_post(&chopstick[(no + 1) % CHAIRNUM]);
-
-        gotoxy(1, no * 4 + 1);
-        printf("Mr. %c drops both chopsticks...                             \n", 'A' + no); fflush(stdout);
-
-        // Remaining Section
-        randomDelay();
-        gotoxy(1, no * 4 + 1);
-        printf("Mr. %c is chewing food...                             \n", 'A' + no); fflush(stdout);
-        randomDelay();
+        randomDelay();  // 模拟吃完后继续思考
     }
 
     gotoxy(1, no * 4 + 1);
-    printf("Mr. %c is full...                                         \n", 'A' + no); fflush(stdout);
+    printf("Mr. %c is full...                                         \n", 'A' + no);
+    fflush(stdout);
+
     pthread_exit(0);
 }
 
-void randomDelay(void){
-// This function provides a delay which slows the process down so we can see what happens
-   srand(time(NULL));
-   int stime = ((rand()%2000)+100)*1000;
-   usleep(stime);
+// 随机延迟函数，模拟思考或吃饭时间
+void randomDelay(void) {
+    int stime = (rand() % 500) + 10;  // 随机延迟10-510毫秒
+    usleep(stime * 1000);  // usleep 使用微秒
+}
+
+// 短暂延迟函数，避免频繁争抢
+void shortDelay(void) {
+    usleep(10 * 1000);  // 短暂延迟10毫秒
 }
