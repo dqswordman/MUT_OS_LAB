@@ -471,3 +471,116 @@ void gpio_stop(int sig) {
     gpioTerminate();
     exit(0);
 }
+
+
+
+
+
+#include <stdio.h>
+#include <unistd.h>
+#include <pigpio.h>
+#include <signal.h>
+#include <stdlib.h>
+
+// 定义GPIO引脚
+int trig = 19;
+int echo = 20;
+int servoPin = 18; // 伺服电机的PWM引脚
+
+void gpio_stop(int sig); // 信号处理函数
+void initGPIO(); // 初始化GPIO
+int ultraSonic(); // 超声波测距函数
+int mapDistanceToPulseWidth(int distance); // 映射距离到脉冲宽度
+
+int main() {
+    if (gpioInitialise() < 0) { // 初始化pigpio库
+        printf("GPIO initialization failed!\n");
+        return -1;
+    }
+
+    // 初始化GPIO引脚
+    initGPIO();
+    signal(SIGINT, gpio_stop); // 注册信号处理函数，处理CTRL-C中断
+
+    gpioSetPWMfrequency(servoPin, 50); // 设置PWM频率为50 Hz，适合伺服电机
+    gpioSetPWMrange(servoPin, 20000);  // 设置占空比范围为20000
+
+    int lastPulseWidth = 1500; // 初始脉冲宽度
+
+    while (1) {
+        int delay = ultraSonic(); // 获取超声波测量的时间差
+        if (delay >= 0) {
+            // 计算距离（以厘米为单位）
+            int distance = delay * 0.0343 / 2;
+
+            // 将距离映射到伺服电机的脉冲宽度范围
+            int pulseWidth = mapDistanceToPulseWidth(distance);
+
+            // 平滑处理：将上次的脉冲宽度逐步移动到新的脉冲宽度
+            if (pulseWidth > lastPulseWidth) {
+                for (int pw = lastPulseWidth; pw <= pulseWidth; pw += 5) { // 每次增加5微秒
+                    gpioPWM(servoPin, pw);
+                    usleep(10000); // 延迟10毫秒
+                }
+            } else {
+                for (int pw = lastPulseWidth; pw >= pulseWidth; pw -= 5) { // 每次减少5微秒
+                    gpioPWM(servoPin, pw);
+                    usleep(10000); // 延迟10毫秒
+                }
+            }
+
+            lastPulseWidth = pulseWidth; // 更新上次的脉冲宽度
+        }
+        usleep(50000); // 延迟50毫秒，避免过于频繁的测量
+    }
+
+    gpioTerminate(); // 释放pigpio库资源
+    return 0;
+}
+
+// 初始化超声波传感器的GPIO
+void initGPIO() {
+    gpioSetMode(trig, PI_OUTPUT);
+    gpioWrite(trig, 0);
+    gpioSetMode(echo, PI_INPUT);
+    gpioSetPullUpDown(echo, PI_PUD_OFF);
+    sleep(2); // 等待传感器稳定
+}
+
+// 超声波测距函数
+int ultraSonic() {
+    int clock1, clock2, timeout;
+
+    gpioWrite(trig, 1);
+    usleep(10);
+    gpioWrite(trig, 0);
+
+    for (timeout = 0; (timeout < 10000) && (gpioRead(echo) == 0); timeout++)
+        usleep(10);
+    clock1 = gpioTick(); // 记录当前时间，以微秒为单位
+    if (timeout >= 10000) return -1;
+
+    for (timeout = 0; (timeout < 10000) && (gpioRead(echo) == 1); timeout++)
+        usleep(10);
+    clock2 = gpioTick(); // 记录当前时间，以微秒为单位
+    if (timeout >= 10000) return -1;
+
+    return clock2 - clock1;
+}
+
+// 将距离映射到伺服电机的脉冲宽度范围
+int mapDistanceToPulseWidth(int distance) {
+    // 将距离映射到1000到2000微秒的范围（伺服电机的脉冲宽度）
+    int pulseWidth = 1000 + (distance * 5); // 调整映射系数使其更丝滑
+    if (pulseWidth < 1000) pulseWidth = 1000; // 限制最小脉冲宽度
+    if (pulseWidth > 2000) pulseWidth = 2000; // 限制最大脉冲宽度
+    return pulseWidth;
+}
+
+// 信号处理函数，用于终止程序时释放GPIO资源
+void gpio_stop(int sig) {
+    printf("User pressing CTRL-C\n");
+    gpioTerminate();
+    exit(0);
+}
+
