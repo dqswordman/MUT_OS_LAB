@@ -242,3 +242,54 @@ void gpio_stop(int sig) {
     exit(0); // 退出程序
 }
 
+
+
+
+
+
+
+
+#include <stdio.h>
+#include <unistd.h>
+#include <pigpio.h>
+#include <signal.h>
+#include <stdlib.h>
+
+int PWM_pin = 18; // 使用GPIO18作为PWM引脚
+
+void gpio_stop(int sig); // 停止GPIO的信号处理函数
+
+int main() {
+    int i;
+    printf("Servo PWM using Hardware Timed PWM (5%%-10%% duty cycle)\n");
+
+    if (gpioInitialise() < 0) { // 初始化pigpio库
+        return -1; // 如果初始化失败，返回-1
+    }
+
+    signal(SIGINT, gpio_stop); // 注册信号处理函数，处理CTRL-C中断
+
+    gpioSetPWMfrequency(PWM_pin, 50); // 设置PWM频率为50 Hz
+    gpioSetPWMrange(PWM_pin, 20000);  // 设置占空比范围为20000
+
+    while (1) {
+        // 增加占空比，使伺服电机从一个角度扫到另一个角度
+        for (i = 1000; i < 2000; i += 10) {
+            gpioPWM(PWM_pin, i); // 设置占空比
+            usleep(10000);       // 延迟10毫秒
+        }
+        // 减小占空比，使伺服电机返回到原来的角度
+        for (i = 2000; i > 1000; i -= 10) {
+            gpioPWM(PWM_pin, i); // 设置占空比
+            usleep(10000);       // 延迟10毫秒
+        }
+    }
+    return 0;
+}
+
+// 信号处理函数，用于终止程序时释放GPIO资源
+void gpio_stop(int sig) {
+    printf("User pressing CTRL-C\n");
+    gpioTerminate(); // 释放pigpio库资源
+    exit(0); // 退出程序
+}
