@@ -293,3 +293,92 @@ void gpio_stop(int sig) {
     gpioTerminate(); // 释放pigpio库资源
     exit(0); // 退出程序
 }
+
+
+
+
+#include <stdio.h>
+#include <unistd.h>
+#include <pigpio.h>
+#include <signal.h>
+#include <stdlib.h>
+
+// 定义GPIO引脚
+int trig = 19;
+int echo = 20;
+int PWM_pin = 18; // 用于PWM控制的LED引脚
+
+void gpio_stop(int sig); // 信号处理函数
+void initGPIO(); // 初始化GPIO
+int ultraSonic(); // 超声波测距函数
+
+int main() {
+    if (gpioInitialise() < 0) { // 初始化pigpio库
+        printf("GPIO initialization failed!\n");
+        return -1;
+    }
+
+    // 初始化GPIO引脚
+    initGPIO();
+    signal(SIGINT, gpio_stop); // 注册信号处理函数，处理CTRL-C中断
+
+    // 设置PWM频率和范围
+    gpioSetPWMfrequency(PWM_pin, 50); // 设置PWM频率为50 Hz
+    gpioSetPWMrange(PWM_pin, 1000);   // 设置占空比范围为1000
+
+    while (1) {
+        int delay = ultraSonic(); // 获取超声波测量的时间差
+        if (delay >= 0) {
+            // 计算距离（以厘米为单位）
+            int distance = delay * 0.0343 / 2;
+
+            // 根据距离计算占空比，距离越近，占空比越高
+            int dutyCycle = 1000 - (distance * 10); // 简单映射，调整占空比范围
+            if (dutyCycle < 0) dutyCycle = 0;       // 限制最小值为0
+            if (dutyCycle > 1000) dutyCycle = 1000; // 限制最大值为1000
+
+            gpioPWM(PWM_pin, dutyCycle); // 设置PWM占空比
+        }
+        usleep(100000); // 延迟100毫秒，避免过于频繁的测量
+    }
+
+    gpioTerminate(); // 释放pigpio库资源
+    return 0;
+}
+
+// 初始化超声波传感器的GPIO
+void initGPIO() {
+    gpioSetMode(trig, PI_OUTPUT);
+    gpioWrite(trig, 0);
+    gpioSetMode(echo, PI_INPUT);
+    gpioSetPullUpDown(echo, PI_PUD_OFF);
+    sleep(2); // 等待传感器稳定
+}
+
+// 超声波测距函数
+int ultraSonic() {
+    int clock1, clock2, timeout;
+
+    gpioWrite(trig, 1);
+    usleep(10);
+    gpioWrite(trig, 0);
+
+    for (timeout = 0; (timeout < 10000) && (gpioRead(echo) == 0); timeout++)
+        usleep(10);
+    clock1 = gpioTick(); // 记录当前时间，以微秒为单位
+    if (timeout >= 10000) return -1;
+
+    for (timeout = 0; (timeout < 10000) && (gpioRead(echo) == 1); timeout++)
+        usleep(10);
+    clock2 = gpioTick(); // 记录当前时间，以微秒为单位
+    if (timeout >= 10000) return -1;
+
+    return clock2 - clock1;
+}
+
+// 信号处理函数，用于终止程序时释放GPIO资源
+void gpio_stop(int sig) {
+    printf("User pressing CTRL-C\n");
+    gpioTerminate();
+    exit(0);
+}
