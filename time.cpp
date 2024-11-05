@@ -191,3 +191,54 @@ int ultraSonic() {
 
     return clock2 - clock1;
 }
+
+
+
+
+
+
+
+
+#include <stdio.h>
+#include <unistd.h>
+#include <pigpio.h>
+#include <signal.h>
+#include <stdlib.h>
+
+int PWM_pin = 18; // 使用GPIO18引脚作为PWM输出
+
+void gpio_stop(int sig); // 停止GPIO的信号处理函数
+
+int main() {
+    int i;
+    printf("LED PWM (0%%-100%% duty cycle)\n");
+    
+    if (gpioInitialise() < 0) { // 初始化pigpio库
+        return -1; // 如果初始化失败，返回-1
+    }
+
+    signal(SIGINT, gpio_stop); // 注册信号处理函数，用于处理CTRL-C中断
+
+    while (1) {
+        // 逐步增加占空比，从0%到100%
+        for (i = 0; i < 100; i++) {
+            gpioHardwarePWM(PWM_pin, 50, i * 10000); // 设置PWM频率为50 Hz，占空比逐步增加
+            usleep(10000); // 延迟10毫秒
+        }
+        // 逐步减少占空比，从100%到0%
+        for (i = 99; i > 0; i--) {
+            gpioHardwarePWM(PWM_pin, 50, i * 10000); // 设置PWM频率为50 Hz，占空比逐步减少
+            usleep(10000); // 延迟10毫秒
+        }
+    }
+
+    return 0;
+}
+
+// 信号处理函数，用于终止程序时释放GPIO资源
+void gpio_stop(int sig) {
+    printf("User pressing CTRL-C\n");
+    gpioTerminate(); // 释放pigpio库资源
+    exit(0); // 退出程序
+}
+
