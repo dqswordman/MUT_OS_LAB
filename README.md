@@ -28,3 +28,6 @@ For the two groups of code of MUT_OS_LAB, the full implementation
   3.强制每个哲学家在给定的时间内选两根筷子。（一旦哲学家选了一根筷子，其他人就必须等到另一根筷子也被选上）
 
     3.Force each philosopher to pick both chopsticks at a given time. (Once a phylosopher picks a chopstick, everybody else has to wait until another chopstick is also picked)
+
+11/11/24
+  回到正轨，涵盖了期中考试后树莓派PI3前的绝大部分内容，以后内容及有空闲时间会具体注释代码对应的PI实验标题
