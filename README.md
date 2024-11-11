@@ -31,3 +31,5 @@ For the two groups of code of MUT_OS_LAB, the full implementation
 
 11/11/24
   回到正轨，涵盖了期中考试后树莓派PI3前的绝大部分内容，以后内容及有空闲时间会具体注释代码对应的PI实验标题
+
+  11/11/24 Back on track, covering most of the content before the Raspberry Pi PI3 after the midterm exam. In the future content and when I have free time, I will specifically comment on the PI experiment title corresponding to the code.
