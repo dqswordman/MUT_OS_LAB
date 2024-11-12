@@ -610,161 +610,174 @@ int main() {
     return 0;
 }
 
-//
+//温度传感器控制伺服电机
 #include <pigpio.h>
 #include <signal.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <unistd.h>
-#include <pthread.h>
-#include <time.h>
 
+// 定义引脚
+#define DS18B20_PIN 16  // DS18B20的GPIO引脚
+#define SERVO_PIN 18    // 伺服电机的GPIO引脚
 #define udelay(us) gpioDelay(us)
-#define DHT11_PIN 17
-#define DHT11_DELAY 85  // 将延迟值从 79 增加到 85
 
-struct DHT11_data {
-    float temp;
-    float humidity;
-} data;
+int running = 1;
 
-int gpioLED[4] = {4, 5, 6, 12};
-volatile int running = true;
-
-void initGPIO();
 void gpio_stop(int sig);
-int piHiPri(const int pri);
-int DHT11_read(struct DHT11_data *data);
-
-#define DHT11_readOneByte(x)  {        \
-   register int _i,_j;                  \
-   for(_i=0;_i<8;_i++){                 \
-        for(_j=0;_j<100;_j++){          \
-            if(gpioRead(DHT11_PIN)==0) break; \
-            udelay(2);                  \
-        }                               \
-        udelay(DHT11_DELAY);            \
-        x <<=1;                         \
-        if(gpioRead(DHT11_PIN))         \
-            x|=1;                       \
-   }}
-
-void *checkDistance(void *param);
-void *showLED(void *param);
+int DS18B20_Init();
+void DS18B20_Write(uint8_t data);
+uint8_t DS18B20_Read(void);
+uint8_t crc8(uint8_t *addr, uint8_t len);
+int mapTemperatureToPulseWidth(float temperature);
 
 int main() {
-    pthread_t tid[2];
-    pthread_attr_t attr[2];
-    void *(*thread[2])(void *) = {checkDistance, showLED};
-    int i;
+    uint8_t tempL, tempH;
+    float temp;
 
-    initGPIO();
-    signal(SIGINT, gpio_stop);
+    if (gpioInitialise() < 0) return -1;
 
-    for (i = 0; i < 2; i++) {
-        pthread_attr_init(&attr[i]);
-        pthread_create(&tid[i], &attr[i], thread[i], NULL);
+    signal(SIGINT, gpio_stop); // 注册信号处理函数
+
+    // 初始化伺服电机的PWM设置
+    gpioSetPWMfrequency(SERVO_PIN, 50);  // 设置PWM频率为50 Hz
+    gpioSetPWMrange(SERVO_PIN, 20000);   // 设置占空比范围为20000
+
+    while (running) {
+        if (!DS18B20_Init()) {
+            printf("No DS18B20 connected!\n");
+            sleep(1);
+            continue;
+        }
+        usleep(1000);
+        DS18B20_Write(0xCC);  // 跳过ROM
+        DS18B20_Write(0x44);  // 启动温度转换
+
+        usleep(100000);  // 等待转换完成
+        if (!DS18B20_Init()) {
+            printf("No DS18B20 connected!\n\r");
+            sleep(1);
+            continue;
+        }
+        usleep(1000);
+        DS18B20_Write(0xCC);  // 跳过ROM
+        DS18B20_Write(0xBE);  // 从scratchpad读取前两个字节
+
+        uint8_t scratchpad[9];
+        uint8_t CRC = 0;
+        for (uint8_t x = 0; x < 9; x++)
+            scratchpad[x] = DS18B20_Read();
+        CRC = crc8(scratchpad, 8);
+        
+        tempL = scratchpad[0];
+        tempH = scratchpad[1];
+
+        if (CRC == scratchpad[8]) {
+            temp = ((float)((tempH << 8) | tempL)) / 16;  // 计算温度值
+            printf("Temperature = %f°C\n", temp);
+
+            // 将温度映射到伺服电机的脉冲宽度
+            int pulseWidth = mapTemperatureToPulseWidth(temp);
+            gpioPWM(SERVO_PIN, pulseWidth);  // 设置伺服电机的PWM占空比
+
+            usleep(500000);  // 延迟500毫秒
+        } else {
+            printf("Error reading temperature\n");
+        }
+
+        fflush(stdout);
+        sleep(1);
     }
 
-    printf("Waiting all threads to stop...\n");
-    fflush(stdout);
-    for (i = 0; i < 2; i++) {
-        pthread_join(tid[i], NULL);
-    }
-    for (i = 0; i < 2; i++) {
-        pthread_attr_destroy(&attr[i]);
-    }
-    gpioTerminate();
+    gpioTerminate();  // 释放GPIO资源
     return 0;
 }
 
-void initGPIO() {
-    int i;
-
-    if (gpioInitialise() < 0) {
-        fprintf(stderr, "Failed to initialize GPIO\n");
-        exit(-1);
-    }
-
-    gpioSetMode(DHT11_PIN, PI_INPUT);
-    gpioSetPullUpDown(DHT11_PIN, PI_PUD_OFF);
-    for (i = 0; i < 4; i++)
-        gpioSetMode(gpioLED[i], PI_OUTPUT);
+// 将温度值映射到伺服电机的脉冲宽度范围
+int mapTemperatureToPulseWidth(float temperature) {
+    // 将温度范围0°C到40°C映射到脉冲宽度1000到2000微秒
+    int pulseWidth = 1000 + ((temperature / 40.0) * 1000);
+    if (pulseWidth < 1000) pulseWidth = 1000;  // 限制最小脉冲宽度
+    if (pulseWidth > 2000) pulseWidth = 2000;  // 限制最大脉冲宽度
+    return pulseWidth;
 }
 
-void *checkDistance(void *param) {
-    while (running) {
-        if (DHT11_read(&data))
-            printf("Temp = %5.1fc, Humidity = % 5.1f%%\r", data.temp, data.humidity);
-        else 
-            printf("Error reading data\r");
-        fflush(stdout);
-        usleep(200000);
-    }
-    pthread_exit(NULL);
+// 初始化DS18B20传感器
+int DS18B20_Init() {
+    uint8_t response = 0;
+    gpioSetMode(DS18B20_PIN, PI_OUTPUT);
+    gpioWrite(DS18B20_PIN, 0);
+    udelay(480);  // 按照数据手册延迟480us
+
+    gpioSetMode(DS18B20_PIN, PI_INPUT);
+    gpioSetPullUpDown(DS18B20_PIN, PI_PUD_OFF);
+    udelay(80);  // 等待DS18B20的响应
+
+    if (!gpioRead(DS18B20_PIN)) response = 1;
+    udelay(480);  // 等待DS18B20准备好接收命令
+    return response;
 }
 
-void *showLED(void *param) {
-    int ledState[4] = {0, 0, 0, 0};
-    while (running) {
-        if (data.temp < 21 && ledState[0] != 0) {
-            gpioWrite(gpioLED[0], 0);
-            ledState[0] = 0;
-        } else if (data.temp >= 21 && ledState[0] != 1) {
-            gpioWrite(gpioLED[0], 1);
-            ledState[0] = 1;
+// 向DS18B20写入数据
+void DS18B20_Write(uint8_t data) {
+    for (int i = 0; i < 8; i++) {
+        gpioSetMode(DS18B20_PIN, PI_OUTPUT);
+        gpioWrite(DS18B20_PIN, 0);
+        udelay(1);
+        if (data & 1) {
+            gpioWrite(DS18B20_PIN, 1);
+            gpioSetMode(DS18B20_PIN, PI_INPUT);
+            udelay(60);
+        } else {
+            udelay(60);
+            gpioWrite(DS18B20_PIN, 1);
+            gpioSetMode(DS18B20_PIN, PI_INPUT);
         }
-        // 其他 LED 类似处理
-        usleep(100000);
+        data >>= 1;
+        udelay(5);
     }
-    pthread_exit(NULL);
+    gpioSetMode(DS18B20_PIN, PI_INPUT);
 }
 
+// 从DS18B20读取数据
+uint8_t DS18B20_Read(void) {
+    uint8_t value = 0;
+
+    for (int i = 0; i < 8; i++) {
+        gpioSetMode(DS18B20_PIN, PI_OUTPUT);
+        gpioWrite(DS18B20_PIN, 0);
+        udelay(1);
+        gpioWrite(DS18B20_PIN, 1);
+        gpioSetMode(DS18B20_PIN, PI_INPUT);
+
+        value >>= 1;
+        udelay(5);
+        if (gpioRead(DS18B20_PIN))
+            value |= 0x80;
+        udelay(60);
+    }
+    return value;
+}
+
+// 计算CRC校验
+uint8_t crc8(uint8_t *addr, uint8_t len) {
+    uint8_t crc = 0;
+    while (len--) {
+        uint8_t inbyte = *addr++;
+        for (uint8_t i = 8; i; i--) {
+            uint8_t mix = (crc ^ inbyte) & 0x01;
+            crc >>= 1;
+            if (mix) crc ^= 0x8c;
+            inbyte >>= 1;
+        }
+    }
+    return crc;
+}
+
+// 处理SIGINT信号
 void gpio_stop(int sig) {
-    printf("Exiting..., please wait\n");
-    running = false;
+    printf("User pressing CTRL-C\n");
+    running = 0;
 }
 
-int DHT11_read(struct DHT11_data *data) {
-    int i;
-    uint8_t temp_l, temp_h, hum_l, hum_h, crc;
-    hum_h = hum_l = temp_h = temp_l = crc = 0;
-
-    gpioSetMode(DHT11_PIN, PI_OUTPUT);
-    gpioWrite(DHT11_PIN, 0);
-    usleep(18000);
-    gpioWrite(DHT11_PIN, 1);
-
-    gpioSetMode(DHT11_PIN, PI_INPUT);
-    for (i = 0; i < 100; i++) {
-        if (gpioRead(DHT11_PIN) == 0) break;
-        udelay(1);
-    }
-    for (i = 0; i < 100; i++) {
-        if (gpioRead(DHT11_PIN) == 1) break;
-        udelay(1);
-    }
-
-    DHT11_readOneByte(hum_h);
-    DHT11_readOneByte(hum_l);
-    DHT11_readOneByte(temp_h);
-    DHT11_readOneByte(temp_l);
-    DHT11_readOneByte(crc);
-
-    printf("hum_h = %.2X  hum_l = %.2X temp_h = %.2X temp_l = %.2X crc= %.2X\n", hum_h, hum_l, temp_h, temp_l, crc);
-    fflush(stdout);
-
-    // 暂时忽略 CRC 校验，用于调试
-    // if ((hum_h + hum_l + temp_h + temp_l) != crc) {
-    //     fprintf(stderr, "CRC check failed\n");
-    //     return 0;
-    // }
-
-    data->humidity = hum_h + hum_l / 10.0;
-    data->temp = temp_h + temp_l / 10.0;
-
-    return 1;
-}
