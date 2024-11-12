@@ -867,10 +867,10 @@ int main() {
 // 将温度值映射到伺服电机的脉冲宽度范围
 int mapTemperatureToPulseWidth(float temperature) {
     // 将温度范围15°C到35°C映射到脉冲宽度500到2500微秒
-    if (temperature < 15.0) temperature = 15.0;  // 将低于15°C的值设为15°C
-    if (temperature > 35.0) temperature = 35.0;  // 将高于35°C的值设为35°C
+    if (temperature < 25.0) temperature = 25.0;  // 将低于15°C的值设为15°C
+    if (temperature > 30.0) temperature = 30.0;  // 将高于35°C的值设为35°C
 
-    int pulseWidth = 500 + ((temperature - 15.0) / 20.0 * 2000);
+    int pulseWidth = 500 + ((temperature - 25.0) / 5.0 * 2000);
     if (pulseWidth < 500) pulseWidth = 500;  // 限制最小脉冲宽度
     if (pulseWidth > 2500) pulseWidth = 2500;  // 限制最大脉冲宽度
     return pulseWidth;
