@@ -526,3 +526,79 @@ void gpio_stop(int sig) {
     printf("Exiting..., please wait\n");
     running = 0;
 }
+
+
+
+//LDR 
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <pigpio.h>
+
+#define LED_PIN 17  // 假设 LED 连接在 GPIO 17 引脚
+
+int running = 1;
+
+void gpio_stop(int sig) {
+    running = 0;
+}
+
+int main() {
+    int fd;
+    uint16_t data;
+    int delay;
+
+    // 初始化 pigpio 库
+    if (gpioInitialise() < 0) {
+        fprintf(stderr, "pigpio 初始化失败\n");
+        return -1;
+    }
+
+    // 设置 LED_PIN 为输出模式
+    gpioSetMode(LED_PIN, PI_OUTPUT);
+
+    // 打开 I2C 设备 ADS1115（地址为 0x48）
+    if ((fd = i2cOpen(1, 0x48, 0)) < 0) {
+        fprintf(stderr, "无法打开 I2C 设备\n");
+        return -1;
+    }
+
+    // 捕获 Ctrl+C 信号以终止程序
+    signal(SIGINT, gpio_stop);
+
+    printf("光敏电阻控制 LED 闪烁速度\n");
+
+    while (running) {
+        // 配置 ADS1115 读取 LDR 通道（通道 3）
+        i2cWriteWordData(fd, 1, 0x03f3);  // 0x03f3 表示读取通道 3 的数据，单次转换
+
+        // 等待转换完成
+        while (((data = i2cReadWordData(fd, 1)) & 0x80) == 0) {
+            usleep(100000);  // 每 100 ms 检查一次
+        }
+
+        // 读取转换结果
+        data = i2cReadWordData(fd, 0);
+        
+        // 交换字节顺序，因为 ADS1115 是大端序，而树莓派是小端序
+        data = ((data >> 8) & 0xff) | ((data << 8) & 0xff00);
+
+        // 将 LDR 值映射到 LED 的闪烁延时，光弱时延时大，光强时延时小
+        delay = 1000 + (data * 10);  // 调整映射关系
+
+        // 控制 LED 的闪烁
+        gpioWrite(LED_PIN, 1);   // 点亮 LED
+        usleep(delay * 1000);    // 延时
+        gpioWrite(LED_PIN, 0);   // 熄灭 LED
+        usleep(delay * 1000);    // 延时
+
+        printf("LED 闪烁延时: %d ms, LDR 值: %d\n", delay, data);
+        fflush(stdout);
+    }
+
+    // 关闭 I2C 设备和 pigpio 库
+    i2cClose(fd);
+    gpioTerminate();
+    return 0;
+}
