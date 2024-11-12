@@ -866,13 +866,13 @@ int main() {
 
 // 将温度值映射到伺服电机的脉冲宽度范围
 int mapTemperatureToPulseWidth(float temperature) {
-    // 将温度范围15°C到35°C映射到脉冲宽度1000到2000微秒
+    // 将温度范围15°C到35°C映射到脉冲宽度500到2500微秒
     if (temperature < 15.0) temperature = 15.0;  // 将低于15°C的值设为15°C
     if (temperature > 35.0) temperature = 35.0;  // 将高于35°C的值设为35°C
 
-    int pulseWidth = 1000 + ((temperature - 15.0) / 20.0 * 1000);
-    if (pulseWidth < 1000) pulseWidth = 1000;  // 限制最小脉冲宽度
-    if (pulseWidth > 2000) pulseWidth = 2000;  // 限制最大脉冲宽度
+    int pulseWidth = 500 + ((temperature - 15.0) / 20.0 * 2000);
+    if (pulseWidth < 500) pulseWidth = 500;  // 限制最小脉冲宽度
+    if (pulseWidth > 2500) pulseWidth = 2500;  // 限制最大脉冲宽度
     return pulseWidth;
 }
 
@@ -953,4 +953,5 @@ void gpio_stop(int sig) {
     printf("User pressing CTRL-C\n");
     running = 0;
 }
+
 
