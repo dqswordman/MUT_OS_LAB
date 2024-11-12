@@ -584,16 +584,23 @@ int main() {
         // 交换字节顺序，因为 ADS1115 是大端序，而树莓派是小端序
         data = ((data >> 8) & 0xff) | ((data << 8) & 0xff00);
 
-        // 将 LDR 值映射到 LED 的闪烁延时，光弱时延时大，光强时延时小
+        // 打印读取到的 LDR 值
+        printf("读取到的 LDR 值: %d\n", data);
+
+        // 将 LDR 值映射到 LED 的闪烁延时
         delay = 1000 + (data * 10);  // 调整映射关系
+        printf("映射后的 LED 闪烁延时: %d ms\n", delay);
 
         // 控制 LED 的闪烁
+        printf("LED 状态: 点亮\n");
         gpioWrite(LED_PIN, 1);   // 点亮 LED
         usleep(delay * 1000);    // 延时
+
+        printf("LED 状态: 熄灭\n");
         gpioWrite(LED_PIN, 0);   // 熄灭 LED
         usleep(delay * 1000);    // 延时
 
-        printf("LED 闪烁延时: %d ms, LDR 值: %d\n", delay, data);
+        printf("循环结束\n\n");
         fflush(stdout);
     }
 
@@ -602,3 +609,4 @@ int main() {
     gpioTerminate();
     return 0;
 }
+
