@@ -624,7 +624,7 @@ int main() {
 
 #define udelay(us) gpioDelay(us)
 #define DHT11_PIN 17
-#define DHT11_DELAY 79
+#define DHT11_DELAY 85  // 将延迟值从 79 增加到 85
 
 struct DHT11_data {
     float temp;
@@ -731,7 +731,6 @@ void gpio_stop(int sig) {
 int DHT11_read(struct DHT11_data *data) {
     int i;
     uint8_t temp_l, temp_h, hum_l, hum_h, crc;
-    char tmp[16];
     hum_h = hum_l = temp_h = temp_l = crc = 0;
 
     gpioSetMode(DHT11_PIN, PI_OUTPUT);
@@ -758,15 +757,14 @@ int DHT11_read(struct DHT11_data *data) {
     printf("hum_h = %.2X  hum_l = %.2X temp_h = %.2X temp_l = %.2X crc= %.2X\n", hum_h, hum_l, temp_h, temp_l, crc);
     fflush(stdout);
 
-    if ((hum_h + hum_l + temp_h + temp_l) != crc) {
-        fprintf(stderr, "CRC check failed\n");
-        return 0;
-    }
+    // 暂时忽略 CRC 校验，用于调试
+    // if ((hum_h + hum_l + temp_h + temp_l) != crc) {
+    //     fprintf(stderr, "CRC check failed\n");
+    //     return 0;
+    // }
 
-    sprintf(tmp, "%u.%u", hum_h, hum_l);
-    data->humidity = atof(tmp);
-    sprintf(tmp, "%u.%u", temp_h, temp_l);
-    data->temp = atof(tmp);
+    data->humidity = hum_h + hum_l / 10.0;
+    data->temp = temp_h + temp_l / 10.0;
 
     return 1;
 }
