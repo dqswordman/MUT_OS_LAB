@@ -388,7 +388,7 @@ void gpio_stop(int sig) {
 
 
 
-//lab 6 
+//lab 6 4i2c输出由左下角摇杆控制
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -446,3 +446,83 @@ void gpio_stop(int sig){
     running = false;
 }
 
+//lab 4i2c 使用上周的代码和本次摇杆输出相结合 使用摇杆控制伺服电机
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <pigpio.h>
+#include <stdint.h>
+
+int running = 1;
+int servoPin = 18; // 伺服电机连接的GPIO引脚
+
+void gpio_stop(int sig);
+int mapADCtoPulseWidth(uint16_t data);
+
+int main() {
+    int fd;
+    uint16_t data;
+
+    // 初始化pigpio库
+    if (gpioInitialise() < 0) exit(-1);
+
+    // 初始化I2C通信
+    if ((fd = i2cOpen(1, 0x48, 0)) < 0) exit(-1);
+
+    signal(SIGINT, gpio_stop); // 注册信号处理函数
+
+    // 设置伺服电机的PWM频率和范围
+    gpioSetPWMfrequency(servoPin, 50);  // 设置PWM频率为50 Hz
+    gpioSetPWMrange(servoPin, 20000);   // 设置占空比范围为20000
+
+    printf("I2C ADS1115 4ch ADC testing and Servo Control...\n");
+
+    // 单端输入读取数据
+    while (running) {
+        // 配置ADS1115开始转换
+        i2cWriteWordData(fd, 1, 0x03c3);
+        
+        // 等待转换完成
+        while (((data = i2cReadWordData(fd, 1)) & 0x80) == 0) {
+            usleep(100000); // 延迟100毫秒
+        }
+
+        // 读取转换后的数据
+        data = i2cReadWordData(fd, 0);
+        // 反转高低字节顺序
+        data = ((data >> 8) & 0xff) | ((data << 8) & 0xff00);
+        
+        // 打印电压输出值
+        printf("Vout = %.4X\n", data);
+        fflush(stdout);
+
+        // 将ADC数据映射到伺服电机的脉冲宽度范围
+        int pulseWidth = mapADCtoPulseWidth(data);
+        
+        // 设置伺服电机的PWM占空比，使机械臂摆动
+        gpioPWM(servoPin, pulseWidth);
+        
+        usleep(250000); // 延迟250毫秒
+    }
+
+    // 关闭I2C和GPIO资源
+    i2cClose(fd);
+    gpioTerminate();
+    return 0;
+}
+
+// 将ADC数据映射到伺服电机的脉冲宽度范围
+int mapADCtoPulseWidth(uint16_t data) {
+    // 将ADC的输出范围（假设为0-32767）映射到伺服电机的脉冲宽度范围（1000到2000微秒）
+    int pulseWidth = 1000 + (data * 1000 / 32767);
+    if (pulseWidth < 1000) pulseWidth = 1000; // 限制最小脉冲宽度
+    if (pulseWidth > 2000) pulseWidth = 2000; // 限制最大脉冲宽度
+    return pulseWidth;
+}
+
+// 信号处理函数，用于终止程序时释放GPIO资源
+void gpio_stop(int sig) {
+    printf("Exiting..., please wait\n");
+    running = 0;
+}
