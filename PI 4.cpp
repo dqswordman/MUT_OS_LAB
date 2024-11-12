@@ -610,3 +610,163 @@ int main() {
     return 0;
 }
 
+//
+#include <pigpio.h>
+#include <signal.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <stdint.h>
+#include <unistd.h>
+#include <pthread.h>
+#include <time.h>
+
+#define udelay(us) gpioDelay(us)
+#define DHT11_PIN 17
+#define DHT11_DELAY 79
+
+struct DHT11_data {
+    float temp;
+    float humidity;
+} data;
+
+int gpioLED[4] = {4, 5, 6, 12};
+volatile int running = true;
+
+void initGPIO();
+void gpio_stop(int sig);
+int piHiPri(const int pri);
+int DHT11_read(struct DHT11_data *data);
+
+#define DHT11_readOneByte(x)  {        \
+   register int _i,_j;                  \
+   for(_i=0;_i<8;_i++){                 \
+        for(_j=0;_j<100;_j++){          \
+            if(gpioRead(DHT11_PIN)==0) break; \
+            udelay(2);                  \
+        }                               \
+        udelay(DHT11_DELAY);            \
+        x <<=1;                         \
+        if(gpioRead(DHT11_PIN))         \
+            x|=1;                       \
+   }}
+
+void *checkDistance(void *param);
+void *showLED(void *param);
+
+int main() {
+    pthread_t tid[2];
+    pthread_attr_t attr[2];
+    void *(*thread[2])(void *) = {checkDistance, showLED};
+    int i;
+
+    initGPIO();
+    signal(SIGINT, gpio_stop);
+
+    for (i = 0; i < 2; i++) {
+        pthread_attr_init(&attr[i]);
+        pthread_create(&tid[i], &attr[i], thread[i], NULL);
+    }
+
+    printf("Waiting all threads to stop...\n");
+    fflush(stdout);
+    for (i = 0; i < 2; i++) {
+        pthread_join(tid[i], NULL);
+    }
+    for (i = 0; i < 2; i++) {
+        pthread_attr_destroy(&attr[i]);
+    }
+    gpioTerminate();
+    return 0;
+}
+
+void initGPIO() {
+    int i;
+
+    if (gpioInitialise() < 0) {
+        fprintf(stderr, "Failed to initialize GPIO\n");
+        exit(-1);
+    }
+
+    gpioSetMode(DHT11_PIN, PI_INPUT);
+    gpioSetPullUpDown(DHT11_PIN, PI_PUD_OFF);
+    for (i = 0; i < 4; i++)
+        gpioSetMode(gpioLED[i], PI_OUTPUT);
+}
+
+void *checkDistance(void *param) {
+    while (running) {
+        if (DHT11_read(&data))
+            printf("Temp = %5.1fc, Humidity = % 5.1f%%\r", data.temp, data.humidity);
+        else 
+            printf("Error reading data\r");
+        fflush(stdout);
+        usleep(200000);
+    }
+    pthread_exit(NULL);
+}
+
+void *showLED(void *param) {
+    int ledState[4] = {0, 0, 0, 0};
+    while (running) {
+        if (data.temp < 21 && ledState[0] != 0) {
+            gpioWrite(gpioLED[0], 0);
+            ledState[0] = 0;
+        } else if (data.temp >= 21 && ledState[0] != 1) {
+            gpioWrite(gpioLED[0], 1);
+            ledState[0] = 1;
+        }
+        // 其他 LED 类似处理
+        usleep(100000);
+    }
+    pthread_exit(NULL);
+}
+
+void gpio_stop(int sig) {
+    printf("Exiting..., please wait\n");
+    running = false;
+}
+
+int DHT11_read(struct DHT11_data *data) {
+    int i;
+    uint8_t temp_l, temp_h, hum_l, hum_h, crc;
+    char tmp[16];
+    hum_h = hum_l = temp_h = temp_l = crc = 0;
+
+    gpioSetMode(DHT11_PIN, PI_OUTPUT);
+    gpioWrite(DHT11_PIN, 0);
+    usleep(18000);
+    gpioWrite(DHT11_PIN, 1);
+
+    gpioSetMode(DHT11_PIN, PI_INPUT);
+    for (i = 0; i < 100; i++) {
+        if (gpioRead(DHT11_PIN) == 0) break;
+        udelay(1);
+    }
+    for (i = 0; i < 100; i++) {
+        if (gpioRead(DHT11_PIN) == 1) break;
+        udelay(1);
+    }
+
+    DHT11_readOneByte(hum_h);
+    DHT11_readOneByte(hum_l);
+    DHT11_readOneByte(temp_h);
+    DHT11_readOneByte(temp_l);
+    DHT11_readOneByte(crc);
+
+    printf("hum_h = %.2X  hum_l = %.2X temp_h = %.2X temp_l = %.2X crc= %.2X\n", hum_h, hum_l, temp_h, temp_l, crc);
+    fflush(stdout);
+
+    if ((hum_h + hum_l + temp_h + temp_l) != crc) {
+        fprintf(stderr, "CRC check failed\n");
+        return 0;
+    }
+
+    sprintf(tmp, "%u.%u", hum_h, hum_l);
+    data->humidity = atof(tmp);
+    sprintf(tmp, "%u.%u", temp_h, temp_l);
+    data->temp = atof(tmp);
+
+    return 1;
+}
